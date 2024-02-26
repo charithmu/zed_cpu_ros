@@ -122,6 +122,16 @@ public:
     }
   }
 
+  int getWidth()
+  {
+    return width_ / 2;
+  }
+
+  int getHeight()
+  {
+    return height_;
+  } // get the width and height of the camera
+
 private:
   cv::VideoCapture* camera_;
   int width_;
@@ -147,7 +157,7 @@ public:
     ros::NodeHandle nh;
     ros::NodeHandle private_nh("~");
     // get ros param
-    private_nh.param("resolution", resolution_, 1);
+    private_nh.param("resolution", resolution_, 2);
     private_nh.param("frame_rate", frame_rate_, 30.0);
     private_nh.param("config_file_location", config_file_location_, std::string(""));
     private_nh.param("left_frame_id", left_frame_id_, std::string("left_camera"));
@@ -161,6 +171,8 @@ public:
 
     ROS_INFO("Try to initialize the camera");
     StereoCamera zed(device_name_, resolution_, frame_rate_);
+    this->width_ = zed.getWidth();
+    this->height_ = zed.getHeight();
     ROS_INFO("Initialized the camera");
 
     // setup publisher stuff
@@ -238,11 +250,11 @@ public:
       }
       if (left_image_pub.getNumSubscribers() > 0)
       {
-        publishImage(left_image, left_image_pub, "left_frame", now);
+        publishImage(left_image, left_image_pub, left_frame_id_, now);
       }
       if (right_image_pub.getNumSubscribers() > 0)
       {
-        publishImage(right_image, right_image_pub, "right_frame", now);
+        publishImage(right_image, right_image_pub, right_frame_id_, now);
       }
       if (left_cam_info_pub.getNumSubscribers() > 0)
       {
@@ -296,6 +308,9 @@ public:
     double l_fy = pt.get<double>(left_str + reso_str + ".fy");
     double l_k1 = pt.get<double>(left_str + reso_str + ".k1");
     double l_k2 = pt.get<double>(left_str + reso_str + ".k2");
+    double l_k3 = pt.get<double>(left_str + reso_str + ".k3");
+    double l_p1 = pt.get<double>(left_str + reso_str + ".p1");
+    double l_p2 = pt.get<double>(left_str + reso_str + ".p2");
     // right value
     double r_cx = pt.get<double>(right_str + reso_str + ".cx");
     double r_cy = pt.get<double>(right_str + reso_str + ".cy");
@@ -303,6 +318,9 @@ public:
     double r_fy = pt.get<double>(right_str + reso_str + ".fy");
     double r_k1 = pt.get<double>(right_str + reso_str + ".k1");
     double r_k2 = pt.get<double>(right_str + reso_str + ".k2");
+    double r_k3 = pt.get<double>(left_str + reso_str + ".k3");
+    double r_p1 = pt.get<double>(left_str + reso_str + ".p1");
+    double r_p2 = pt.get<double>(left_str + reso_str + ".p2");
 
     // get baseline and convert mm to m
     boost::optional<double> baselineCheck;
@@ -327,7 +345,7 @@ public:
     double ry = pt.get<double>("STEREO.CV_" + reso_str);
 
     // assume zeros, maybe not right
-    double p1 = 0, p2 = 0, k3 = 0;
+    // double p1 = 0, p2 = 0, k3 = 0; // fixed above
 
     left_info.distortion_model = sensor_msgs::distortion_models::PLUMB_BOB;
     right_info.distortion_model = sensor_msgs::distortion_models::PLUMB_BOB;
@@ -339,21 +357,23 @@ public:
     left_info.D.resize(5);
     left_info.D[0] = l_k1;
     left_info.D[1] = l_k2;
-    left_info.D[2] = k3;
-    left_info.D[3] = p1;
-    left_info.D[4] = p2;
+    left_info.D[3] = l_p1;
+    left_info.D[4] = l_p2;
+    left_info.D[2] = l_k3;
+
 
     right_info.D.resize(5);
     right_info.D[0] = r_k1;
     right_info.D[1] = r_k2;
-    right_info.D[2] = k3;
-    right_info.D[3] = p1;
-    right_info.D[4] = p2;
+    right_info.D[3] = r_p1;
+    right_info.D[4] = r_p2;
+    right_info.D[2] = r_k3;
 
-    // Intrinsic camera matrix
-    // 	[fx  0 cx]
+
+    // Intrinsic camera matrix Row-major order
+    // 	    [fx  0 cx]
     // K =  [ 0 fy cy]
-    //	[ 0  0  1]
+    //	    [ 0  0  1]
     left_info.K.fill(0.0);
     left_info.K[0] = l_fx;
     left_info.K[2] = l_cx;

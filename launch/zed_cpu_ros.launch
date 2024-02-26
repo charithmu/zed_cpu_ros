@@ -1,27 +1,80 @@
 <launch>
-<arg name="config_file_location" default="$(find zed_cpu_ros)/config/SN1267.conf"/>
-<arg name="camera_namespace" default="camera"/>
-<!-- to find your device name, use ls /dev/ and look for the name begin with video -->
-<arg name="device_name" value="/dev/video003"/>
-<arg name="resolution" default="1"/>
-<arg name="frame_rate" default="30"/>
-<arg name="show_image" default="false"/>
-<arg name="encoding" default="bgr8"/>
-<arg name="use_zed_config" default="true"/>
 
-<node pkg="zed_cpu_ros" type="zed_cpu_ros" name="zed_cpu_ros_node" output="screen" ns="$(arg camera_namespace)" required="true">
-	<param name="resolution" value="$(arg resolution)" unless="$(eval resolution>3)"/>
-	<param name="frame_rate" value="$(arg frame_rate)"/>
-	<param name="config_file_location" value="$(arg config_file_location)"/>
-	<param name="show_image" value="$(arg show_image)"/>
-	<param name="left_frame_id" value="left_frame"/>
-	<param name="right_frame_id" value="right_frame"/>
-	<param name="use_zed_config" value="$(arg use_zed_config)"/>
-	<param name="device_name" value="$(arg device_name)"/>
-	<param name="encoding" value="$(arg encoding)"/>
-</node>
+	<!-- Camera Model (for URDF) and Name (for namespaces/tf) -->
+	<arg name="camera_name" default="zed" />
+	<arg name="camera_model" default="zedm" />
+	<!-- 'zed' or 'zedm' or 'zed2' -->
+	<arg name="base_frame" default="base_link" />
+	<!-- Position respect to base frame (i.e. "base_link) -->
+	<arg name="cam_pos_x" default="0.0" />
+	<arg name="cam_pos_y" default="0.0" />
+	<arg name="cam_pos_z" default="0.0" />
+	<!-- Orientation respect to base frame (i.e. "base_link) -->
+	<arg name="cam_roll" default="0.0" />
+	<arg name="cam_pitch" default="0.0" />
+	<arg name="cam_yaw" default="0.0" />
+	<!-- Publish ZED urdf -->
+	<arg name="publish_urdf" default="true" />
 
-<!-- <node pkg="tf" type="static_transform_publisher" name="static_tf_1" args="0.25 0 0.4 0 0 0 1 base_link left_frame 30"/> -->
-<!-- <node pkg="tf" type="static_transform_publisher" name="static_tf_2" args="0 0.120 0 0 0 0 1 left_frame right_frame 30"/> -->
+	<!-- ZED Camera CPU Node Parameters -->
+	<arg name="device_name" default="/dev/video0"/>
+	<arg name="resolution" default="2"/>
+	<!-- (2xWidth and Height) 0: HD2K(4416x1242), 1: HD1080(3840x1080), 2: HD720(2560x720), 3: VGA(1344x376) -->
+	<arg name="frame_rate" default="30"/>
+	<arg name="config_file_location" default="$(find zed_cpu_ros)/config/SN11097916.conf"/>
+	<arg name="use_zed_config" default="true"/>
+	<!-- Use the ZED calibration file, if false, use the left.yaml and right.yaml ROS calibration-->
+	<arg name="show_image" default="false"/>
+	<arg name="encoding" default="bgr8"/>
+	<arg name="left_frame_id" default="zed_left_camera_optical_frame"/>
+	<arg name="right_frame_id" default="zed_right_camera_optical_frame"/>
+
+	<!-- ZED Camera Node CPU-->
+	<node pkg="zed_cpu_ros" type="zed_cpu_ros" name="zed_cpu_ros_node" output="screen" ns="$(arg camera_name)" required="true">
+		<param name="device_name" value="$(arg device_name)"/>
+		<param name="resolution" value="$(arg resolution)" unless="$(eval resolution>3)"/>
+		<param name="frame_rate" value="$(arg frame_rate)"/>
+		<param name="config_file_location" value="$(arg config_file_location)"/>
+		<param name="use_zed_config" value="$(arg use_zed_config)"/>
+		<param name="show_image" value="$(arg show_image)"/>
+		<param name="encoding" value="$(arg encoding)"/>
+		<param name="left_frame_id" value="$(arg left_frame_id)"/>
+		<param name="right_frame_id" value="$(arg right_frame_id)"/>
+	</node>
+
+	<!-- ZED Camera stereo rectify (if using, disable individial image_proc/rectify nodelets)-->
+	<!-- <node pkg="stereo_image_proc" type="stereo_image_proc" name="zed_stereo_image_proc" respawn="true" output="screen" ns="$(arg camera_name)"> -->
+	<!-- <param name="min_disparity" value="1"/> -->
+	<!-- <param name="correlation_window_size" value="20"/> -->
+	<!-- </node> -->
+
+	<!-- TODO: improve below nodelet definitions-->
+
+	<!-- ZED left Camera rectify-->
+	<group ns="$(arg camera_name)/left">
+		<arg name="manager" default="$(arg camera_name)_left_manager"/>
+		<node pkg="nodelet" type="nodelet" name="$(arg manager)" args="manager" output="screen" />
+		<node pkg="nodelet" type="nodelet" name="rectify_color_left" args="load image_proc/rectify $(arg manager) --no-bond" respawn="false" output="screen">
+			<remap from="image_mono" to="image_raw" />
+		</node>
+	</group>
+
+	<!-- ZED right Camera rectify-->
+	<group ns="$(arg camera_name)/right">
+		<arg name="manager" default="$(arg camera_name)_right_manager"/>
+		<node pkg="nodelet" type="nodelet" name="$(arg manager)" args="manager" output="screen" />
+		<node pkg="nodelet" type="nodelet" name="rectify_color_right" args="load image_proc/rectify $(arg manager) --no-bond" respawn="false" output="screen">
+			<remap from="image_mono" to="image_raw" />
+		</node>
+	</group>
+
+	<!-- ROS URDF description of the ZED (need zed_ros_wrapper package)-->
+	<group if="$(arg publish_urdf)">
+		<param name="$(arg camera_name)_description" command="$(find xacro)/xacro '$(find zed_wrapper)/urdf/zed_descr.urdf.xacro' camera_name:=$(arg camera_name) camera_model:=$(arg camera_model) base_frame:=$(arg base_frame) cam_pos_x:=$(arg cam_pos_x) cam_pos_y:=$(arg cam_pos_y) cam_pos_z:=$(arg cam_pos_z) cam_roll:=$(arg cam_roll) cam_pitch:=$(arg cam_pitch) cam_yaw:=$(arg cam_yaw)" />
+
+		<node name="$(arg camera_name)_state_publisher" pkg="robot_state_publisher" type="robot_state_publisher" output="screen" required="true">
+			<remap from="robot_description" to="$(arg camera_name)_description" />
+		</node>
+	</group>
 
 </launch>

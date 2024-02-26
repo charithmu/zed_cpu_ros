@@ -1,0 +1,8 @@
+<launch>
+
+    <node pkg="image_proc" type="image_proc" name="zed_image_proc" respawn="true" output="screen" ns="zedm/zed_node/left_raw">
+        <remap from="image_raw" to="image_raw_color" />
+        <remap from="camera_info" to="camera_info" />
+    </node>
+
+</launch>
